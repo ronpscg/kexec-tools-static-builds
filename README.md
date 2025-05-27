@@ -19,3 +19,20 @@ Do the same things in the e2fsprogs repo / videos for dosfstools.
 Will not be as elaborate as with the previous tools. If a *short* version is uploaded, it will be provided.
 Short explanations in youtube:
 - <future placeholder>
+
+## Notes about other toolchains:
+Note the significant size difference when building with *musl* cf. when building with *glibc*. I only tested it for x86_64.
+As I am unaware of an easily publicly available package for installing musl, I am not providing the instructions to do it, but basically you just
+use the relevant tuple in the script (e.g. `x86_64-linux-musl`). I am writing it explicitly because this is a quite significant difference.
+You may of course experiment with other toolchains.
+
+```
+ron@ronmsi:~/dev/pscgdebos-external-projects-build/kexec-tools-static-builds$ du -sh x86_64-linux-musl-install/usr/local/sbin/*
+220K	x86_64-linux-musl-install/usr/local/sbin/kexec
+48K	x86_64-linux-musl-install/usr/local/sbin/vmcore-dmesg
+
+ron@ronmsi:~/dev/pscgdebos-external-projects-build/kexec-tools-static-builds$ du -sh x86_64-linux-gnu-install/usr/local/sbin/*
+1.3M	x86_64-linux-gnu-install/usr/local/sbin/kexec
+748K	x86_64-linux-gnu-install/usr/local/sbin/vmcore-dmesg
+ron@ronmsi:~/dev/pscgdebos-external-projects-build/kexec-tools-static-builds$ 
+```
