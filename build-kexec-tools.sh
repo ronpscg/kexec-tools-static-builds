@@ -4,7 +4,18 @@
 #
 # Used to accompany The PSCG's training/Ron Munitz's talks
 #
+: ${TUPLES="x86_64-linux-gnu aarch64-linux-gnu riscv64-linux-gnu arm-linux-gnueabi arm-linux-gnueabihf i686-linux-gnu loongarch64-linux-gnu"}
+# Note: as per the time of writing the following architectures are not supported by kexec:
+#       alpha, arc, powerpc, sparc64 .
+# 	Leaving them just in case they get support in the future and you use them
+: ${MORE_TUPLES="alpha-linux-gnu arc-linux-gnu m68k-linux-gnu mips64-linux-gnuabi64 mips64el-linux-gnuabi64 mips-linux-gnu mipsel-linux-gnu powerpc-linux-gnu powerpc64-linux-gnu powerpc64le-linux-gnu sh4-linux-gnu sparc64-linux-gnu s390x-linux-gnu"}
 : ${SRC_PROJECT=$(readlink -f ./kexec-tools)}
+
+# riscv64: important: the latest tag as per the time of writing it, v2.0.31" DOES NOT SUPPORT building for riscv64.
+# the last time this was updated, master was at commit 8322826fa7b04a5c0f023eda78d69dd1413a1412 
+# it is not explicitly mentioned, because it could be rebased
+: ${GIT_REF=master}
+: ${USE_MULTILIB_FOR_32BIT_X86=false}	# if true - use -m32. This conflicts with all cross-compilers. A better alternative for 2025 is to use native toolchain distro, i686-linux-gnu-...
 
 # ./configure vs. make:
 # Could use --prefix in configure, but it's working with another folder, and we don't really want the entire set of tools here.
@@ -33,7 +44,6 @@
 #
 # install-strip does not work. I didn't look into the makefiles. Didn't bother more
 : ${MORE_CONFIGURE_FLAGS=" --without-zstd "}
-: ${MORE_TUPPLES=i686-linux-gnu} # avoid multilib as it clashes with the other (arm, aarch64) cross-compilers. Just use a cross compiler and that's it
 
 #
 # $1: build directory
@@ -59,10 +69,10 @@ build_with_installing() (
 	echo -e "\x1b[34mConfiguring $tuple\x1b[0m"
 	$SRC_PROJECT/configure LDFLAGS=--static  --host=${CROSS_COMPILE%-} $MORE_CONFIGURE_FLAGS || { echo -e "\x1b[31mFailed to configure for $installdir\x1b[0m" ; exit 1 ; }
 	echo -e "\x1b[34mBuilding and installing $tuple\x1b[0m ($PWD)"
-	echo "make -j$(nproc) DESTDIR=$installdir install" || { echo -e "\x1b[31mFailed to build/install for $installdir\x1b[0m" ; exit 1 ; }
-	make -j$(nproc) DESTDIR=$installdir install 
-	echo -e "\x1b[34mStripping $tuple\x1b[0m ($PWD)" || { echo -e "\x1b[31mFailed to strip for $installdir\x1b[0m" ; exit 1 ; }
-	find $installdir -executable -not -type d | xargs ${CROSS_COMPILE}strip -s
+	echo "make -j$(nproc) DESTDIR=$installdir install"
+	make -j$(nproc) DESTDIR=$installdir install || { echo -e "\x1b[31mFailed to build/install for $installdir\x1b[0m" ; exit 1 ; }
+	echo -e "\x1b[34mStripping $tuple\x1b[0m ($PWD)"
+	find $installdir -executable -not -type d | xargs ${CROSS_COMPILE}strip -s || { echo -e "\x1b[31mFailed to strip for $installdir\x1b[0m" ; exit 1 ; }
 	echo -e "\x1b[32m$tuple - Done!\x1b[0m ($PWD)"
 )
 
@@ -72,8 +82,7 @@ build_with_installing() (
 # It may however need more configuration if you do not build for gnulibc
 build_for_several_tuples() {
 	local failing_tuples=""
-	for tuple in x86_64-linux-gnu aarch64-linux-gnu riscv64-linux-gnu arm-linux-gnueabi arm-linux-gnueabihf $MORE_TUPPLES ; do
-	#for tuple in $MORE_TUPPLES aarch64-linux-gnu ; do
+        for tuple in $TUPLES $MORE_TUPLES ; do
 		echo -e "\x1b[35mConfiguring and building $tuple\x1b[0m"
 		export CROSS_COMPILE=${tuple}- # we'll later strip it but CROSS_COMPILE is super standard, and autotools is "a little less standard"
 		build_with_installing $tuple-build $tuple-install 2> err.$tuple || failing_tuples="$failing_tuples $tuple"
@@ -82,7 +91,7 @@ build_for_several_tuples() {
 	if [ -z "$failing_tuples" ] ; then
 		echo -e "\x1b[32mDone\x1b[0m"
 	else
-		echo "\x1b[33mDone\x1b[0m You can see errors in $(for x in $failing_tuples ; do echo err.$x ; done)"
+		echo -e "\x1b[33mDone\x1b[0m You can see errors in $(for x in $failing_tuples ; do echo err.$x ; done)"
 	fi
 }
 
@@ -91,7 +100,7 @@ build_for_several_tuples() {
 #
 build_and_install_32bitx86_on_x86_64() {
 	export CROSS_COMPILE=""
-	local tuple=i686-linux-gnu # pretty much arbitrary
+	local tuple=i386-linux-gnu # pretty much arbitrary
 	local builddir=$PWD/$tuple-build
 	local installdir=$PWD/$tuple-install
 	mkdir $builddir
@@ -102,20 +111,16 @@ build_and_install_32bitx86_on_x86_64() {
 }
 
 fetch() (
-	# riscv64: important: the latest tag as per the time of writing it, v2.0.31" DOES NOT SUPPORT building for riscv64.
-	# the last time this was updated, master was at commit 8322826fa7b04a5c0f023eda78d69dd1413a1412 
-	# it is not explicitly mentioned, because it could be rebased
-	: ${CHECKOUT_COMMIT=""} # -b v2.0.31 
-
-	git clone git://git.kernel.org/pub/scm/utils/kernel/kexec/kexec-tools.git 
+	[ "$1" = "dontfetch" ] && return
+	git clone git://git.kernel.org/pub/scm/utils/kernel/kexec/kexec-tools.git -b $GIT_REF || exit 1
 	cd kexec-tools && ./bootstrap
 )
 
 main() {
-	fetch || exit 1
+	fetch $@ || exit 1
 	build_for_several_tuples
 	if [ "$(uname -m)" = "x86_64" ] ; then
-		if [[ ! "$MORE_TUPPLES" =~ i?86-linux-gnu ]] ; then
+		if [ "$USE_MULTILIB_FOR_32BIT_X86" = "true" ] ; then
 			build_and_install_32bitx86_on_x86_64
 		fi
 	fi
