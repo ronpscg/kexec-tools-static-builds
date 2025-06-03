@@ -5,6 +5,7 @@
 # Used to accompany The PSCG's training/Ron Munitz's talks
 #
 : ${SRC_PROJECT=$(readlink -f ./kexec-tools)}
+: ${USE_MULTILIB_FOR_32BIT_X86=false}	# if true - use -m32. This conflicts with all cross-compilers. A better alternative for 2025 is to use native toolchain distro, i686-linux-gnu-...
 
 # ./configure vs. make:
 # Could use --prefix in configure, but it's working with another folder, and we don't really want the entire set of tools here.
@@ -33,7 +34,7 @@
 #
 # install-strip does not work. I didn't look into the makefiles. Didn't bother more
 : ${MORE_CONFIGURE_FLAGS=" --without-zstd "}
-: ${MORE_TUPPLES=i686-linux-gnu} # avoid multilib as it clashes with the other (arm, aarch64) cross-compilers. Just use a cross compiler and that's it
+: ${MORE_TUPPLES=""} 
 
 #
 # $1: build directory
@@ -72,7 +73,7 @@ build_with_installing() (
 # It may however need more configuration if you do not build for gnulibc
 build_for_several_tuples() {
 	local failing_tuples=""
-	for tuple in x86_64-linux-gnu aarch64-linux-gnu riscv64-linux-gnu arm-linux-gnueabi arm-linux-gnueabihf $MORE_TUPPLES ; do
+	for tuple in x86_64-linux-gnu aarch64-linux-gnu riscv64-linux-gnu arm-linux-gnueabi arm-linux-gnueabihf i686-linux-gnu $MORE_TUPPLES ; do
 	#for tuple in $MORE_TUPPLES aarch64-linux-gnu ; do
 		echo -e "\x1b[35mConfiguring and building $tuple\x1b[0m"
 		export CROSS_COMPILE=${tuple}- # we'll later strip it but CROSS_COMPILE is super standard, and autotools is "a little less standard"
@@ -91,7 +92,7 @@ build_for_several_tuples() {
 #
 build_and_install_32bitx86_on_x86_64() {
 	export CROSS_COMPILE=""
-	local tuple=i686-linux-gnu # pretty much arbitrary
+	local tuple=i386-linux-gnu # pretty much arbitrary
 	local builddir=$PWD/$tuple-build
 	local installdir=$PWD/$tuple-install
 	mkdir $builddir
@@ -115,7 +116,7 @@ main() {
 	fetch || exit 1
 	build_for_several_tuples
 	if [ "$(uname -m)" = "x86_64" ] ; then
-		if [[ ! "$MORE_TUPPLES" =~ i?86-linux-gnu ]] ; then
+		if [ "$USE_MULTILIB_FOR_32BIT_X86" = "true" ] ; then
 			build_and_install_32bitx86_on_x86_64
 		fi
 	fi
